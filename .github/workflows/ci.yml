@@ -97,6 +97,7 @@ jobs:
           GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PYTHONPATH: "${{ github.workspace }}/code_auditor_tool"
         run: |
           cd code_auditor_tool
           python -m ci_cd.ci_runner \
