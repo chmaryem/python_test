@@ -2,7 +2,7 @@
 # CI/CD Pipeline — Généré automatiquement par Code Auditor
 #
 # 2 jobs :
-#   1. build-test  → unknown (unknown)
+#   1. build-test  → pip (python)
 #   2. sonar-scan  → Analyse qualité SonarQube
 #
 # Pour configurer SonarQube :
@@ -29,7 +29,7 @@ permissions:
 jobs:
   # ── Job 1 : Build & Test ──────────────────────────────────────
   build-test:
-    name: "🔧 Build & Test (unknown/unknown)"
+    name: "🔧 Build & Test (python/pip)"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,10 +38,19 @@ jobs:
         with:
           fetch-depth: 0  # Requis pour SonarQube blame
 
-      - name: "Build system non detecte"
+      - name: "Setup Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: "Install"
         run: |
-          echo "Aucun build system reconnu — ajoutez manuellement les steps."
-          ls -la
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: "Tests"
+        run: pytest --tb=short -q
+        continue-on-error: true
 
       - name: "📊 Upload Test Results"
         uses: actions/upload-artifact@v4
@@ -98,8 +107,8 @@ jobs:
             -Dsonar.token=${{ secrets.SONAR_TOKEN }}
         continue-on-error: true
 
-      - name: "✅ SonarQube Quality Gate"
-        uses: sonarqube-quality-gate-action@master
+      - name: "SonarQube Quality Gate"
+        uses: sonarsource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
