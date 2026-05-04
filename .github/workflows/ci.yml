@@ -1,105 +1,114 @@
 # ─────────────────────────────────────────────────────────────────
-# CI/CD Pipeline — Généré automatiquement par Code Auditor AI
+# CI/CD Pipeline — Généré automatiquement par Code Auditor
 #
 # 2 jobs :
 #   1. build-test  → unknown (unknown)
-#   2. code-review → Code Auditor (RAG + KG + LLM)
+#   2. sonar-scan  → Analyse qualité SonarQube
 #
-# Pour configurer les secrets :
-#   Settings → Secrets → Actions → New repository secret
-#   - OPENROUTER_API_KEY  (clé OpenRouter)
-#   - GOOGLE_API_KEY      (clé Gemini)
+# Pour configurer SonarQube :
+#   1. Créer un projet sur SonarCloud.io ou votre serveur SonarQube
+#   2. Ajouter les secrets dans Settings → Secrets → Actions :
+#      - SONAR_TOKEN    : Token d'analyse SonarQube
+#      - SONAR_HOST_URL : https://sonarcloud.io (ou votre serveur)
 # ─────────────────────────────────────────────────────────────────
 
-name: "CI/CD — Build + Code Auditor"
+name: "CI/CD — Build + SonarQube"
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
-  statuses: write
-  pull-requests: write
   contents: read
+  statuses: write
+  pull-requests: read
+  security-events: write
 
 jobs:
   # ── Job 1 : Build & Test ──────────────────────────────────────
   build-test:
-    name: "Build & Test (unknown/unknown)"
+    name: "🔧 Build & Test (unknown/unknown)"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: "Checkout"
+      - name: "📥 Checkout"
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Requis pour SonarQube blame
 
       - name: "Build system non detecte"
         run: |
           echo "Aucun build system reconnu — ajoutez manuellement les steps."
           ls -la
 
-  # ── Job 2 : Code Auditor IA Review ────────────────────────────
-  code-review:
-    name: "Code Auditor Review"
+      - name: "📊 Upload Test Results"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            target/surefire-reports/
+            build/test-results/
+          retention-days: 5
+
+  # ── Job 2 : SonarQube Analysis ────────────────────────────────
+  sonar-scan:
+    name: "🔍 SonarQube Analysis"
+    needs: build-test  # Attend que build-test réussisse
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'pull_request'
+    timeout-minutes: 15
+    if: always() && needs.build-test.result == 'success'
     steps:
-      - name: "Checkout Projet"
-        uses: actions/checkout@v4
-
-      - name: "Checkout Code Auditor"
+      - name: "📥 Checkout"
         uses: actions/checkout@v4
         with:
-          repository: chmaryem/code_auditor
-          path: code_auditor_tool
+          fetch-depth: 0  # Requis pour l'analyse complète
 
-      - name: "Setup Python 3.11"
-        uses: actions/setup-python@v5
+      - name: "⚙️ Setup Java 17 (SonarQube requiert Java)"
+        uses: actions/setup-java@v4
         with:
-          python-version: '3.11'
+          java-version: '17'
+          distribution: 'temurin'
 
-      # Node.js requis par le MCP GitHub server (npx @modelcontextprotocol/server-github)
-      - name: "Setup Node.js 20"
-        uses: actions/setup-node@v4
+      - name: "📦 Download Build Artifacts"
+        uses: actions/download-artifact@v4
         with:
-          node-version: '20'
+          name: test-results
+          path: .
+        continue-on-error: true
 
-      - name: "Cache pip (requirements-ci)"
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-auditor-${{ hashFiles('code_auditor_tool/requirements-ci.txt') }}
-          restore-keys: |
-            pip-auditor-
-
-      # Utilise requirements-ci.txt (versions compatibles Python 3.11)
-      # et NON requirements.txt qui contient des versions trop anciennes
-      - name: "Install Code Auditor"
-        run: |
-          cd code_auditor_tool
-          pip install --upgrade pip setuptools wheel
-          if [ -f requirements-ci.txt ]; then
-            pip install -r requirements-ci.txt
-          else
-            echo "WARN: requirements-ci.txt absent, fallback sur requirements.txt"
-            pip install -r requirements.txt || true
-          fi
-
-      # Pre-install du MCP GitHub server pour eviter cold-start lent
-      - name: "Pre-install MCP GitHub server"
-        run: npx --yes @modelcontextprotocol/server-github --version || true
-
-      - name: "Analyse PR"
-        working-directory: code_auditor_tool
+      - name: "🔍 SonarQube Scan (CLI)"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          PYTHONPATH: "${{ github.workspace }}/code_auditor_tool"
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          python -m ci_cd.ci_runner \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}"
+          # Télécharger sonar-scanner si nécessaire
+          if ! command -v sonar-scanner &> /dev/null; then
+            wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+            unzip -q sonar-scanner-cli-*.zip
+            export PATH=$PWD/sonar-scanner-*/bin:$PATH
+          fi
+          
+          sonar-scanner \
+            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }} \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      - name: "✅ SonarQube Quality Gate"
+        uses: sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        continue-on-error: true
+
+      - name: "📊 SonarQube Metrics"
+        run: |
+          echo "SonarQube analysis complete"
+          echo "Project: ${{ github.repository_owner }}_${{ github.event.repository.name }}"
+          echo "URL: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ github.repository_owner }}_${{ github.event.repository.name }}"
+        continue-on-error: true
