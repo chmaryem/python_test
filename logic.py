@@ -6,6 +6,6 @@ def process_data(connection, user_input):
         df = pd.DataFrame(result.fetchall(), columns=[desc[0] for desc in result.description])
         return df
     else:
-        return "No data found" 
+        return pd.DataFrame()
     
                                
