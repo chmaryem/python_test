@@ -89,23 +89,15 @@ jobs:
           path: .
         continue-on-error: true
 
-      - name: "🔍 SonarQube Scan (CLI)"
+      - name: "SonarQube Scan"
+        uses: sonarsource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          # Télécharger sonar-scanner si nécessaire
-          if ! command -v sonar-scanner &> /dev/null; then
-            wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-            unzip -q sonar-scanner-cli-*.zip
-            export PATH=$PWD/sonar-scanner-*/bin:$PATH
-          fi
-          
-          sonar-scanner \
-            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }} \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }}
+            -Dsonar.sources=.
         continue-on-error: true
 
       - name: "SonarQube Quality Gate"
